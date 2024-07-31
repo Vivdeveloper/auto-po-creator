@@ -49,3 +49,11 @@ def create_purchase_orders(material_request):
         'created': purchase_orders,
         'existing': existing_orders
     }
+
+
+@frappe.whitelist()
+def get_suppliers_for_item(item_code):
+    default_suppliers = frappe.get_all('Default Supplier', filters={'parent': item_code}, fields=['default_suppliers'])
+    supplier_list = [entry.default_suppliers for entry in default_suppliers]
+    return supplier_list
+
