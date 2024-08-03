@@ -20,35 +20,62 @@ def create_purchase_orders(material_request):
     purchase_orders = []
     existing_orders = []
     for supplier, items in items_by_supplier.items():
-        existing_po = frappe.get_all('Purchase Order', filters={
+        # Get existing purchase orders for the supplier and material request
+        existing_po_names = frappe.get_all('Purchase Order', filters={
             'material_request': material_request,
             'supplier': supplier,
             'docstatus': ['<', 2]  # Check for draft and submitted POs
         }, fields=['name'])
 
-        if existing_po:
-            existing_orders.append({'supplier': supplier, 'po_name': existing_po[0].name})
-            continue 
+        ordered_qty_by_item = {}
+        
+        if existing_po_names:
+            # Fetch all items in existing POs
+            existing_po_names = [po.name for po in existing_po_names]
+            existing_po_items = frappe.get_all('Purchase Order Item', filters={
+                'parent': ['in', existing_po_names],
+                'material_request': material_request
+            }, fields=['item_code', 'qty'])
 
-        po = frappe.new_doc('Purchase Order')
-        po.supplier = supplier
+            # Calculate ordered quantities by item code
+            for item in existing_po_items:
+                if item['item_code'] not in ordered_qty_by_item:
+                    ordered_qty_by_item[item['item_code']] = 0
+                ordered_qty_by_item[item['item_code']] += item['qty']
+
+        items_to_order = []
         for item in items:
-            po.append('items', {
-                'item_code': item.item_code,
-                'qty': item.qty,
-                'schedule_date': item.schedule_date,
-                'rate': item.rate,
-                'warehouse': item.warehouse,
-                'material_request': material_request,
-                'material_request_item': item.name
-            })
-        po.insert()
-        purchase_orders.append({'name': po.name, 'supplier': po.supplier})
+            due_qty = item.qty - ordered_qty_by_item.get(item.item_code, 0)
+            if due_qty > 0:
+                item.due_qty = due_qty
+                items_to_order.append(item)
+
+        if items_to_order:
+            po = frappe.new_doc('Purchase Order')
+            po.supplier = supplier
+            for item in items_to_order:
+                po.append('items', {
+                    'item_code': item.item_code,
+                    'qty': item.due_qty,
+                    'schedule_date': item.schedule_date,
+                    'rate': item.rate,
+                    'warehouse': item.warehouse,
+                    'material_request': material_request,
+                    'material_request_item': item.name
+                })
+            po.insert()
+            purchase_orders.append({'name': po.name, 'supplier': po.supplier})
+        else:
+            if existing_po_names:
+                existing_orders.append({'supplier': supplier, 'po_name': existing_po_names[0]})
 
     return {
         'created': purchase_orders,
         'existing': existing_orders
     }
+
+
+
 
 
 @frappe.whitelist()
