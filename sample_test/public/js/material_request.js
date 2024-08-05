@@ -15,6 +15,12 @@ frappe.ui.form.on('Material Request', {
                                 message += `<a href='/app/purchase-order/${po.name}'>${po.name}</a> (Supplier: ${po.supplier})<br>`;
                             });
                         }
+                        if (response.message.updated.length > 0) {
+                            message += '<br><b>' + __('Purchase Orders Updated Successfully:') + '</b><br>';
+                            response.message.updated.forEach(po => {
+                                message += `<a href='/app/purchase-order/${po.name}'>${po.name}</a> (Supplier: ${po.supplier})<br>`;
+                            });
+                        }
                         if (response.message.existing.length > 0) {
                             message += '<br><b>' + __('Existing Purchase Orders:') + '</b><br>';
                             response.message.existing.forEach(po => {
@@ -24,6 +30,7 @@ frappe.ui.form.on('Material Request', {
                         if (response.message.created.length === 0 && response.message.existing.length > 0) {
                             message = __('All purchase orders for the suppliers have already been created.');
                         }
+                       
                         frappe.msgprint({
                             title: __('Purchase Order Creation'),
                             indicator: 'green',
