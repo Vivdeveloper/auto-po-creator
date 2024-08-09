@@ -5,17 +5,19 @@ from frappe.model.document import Document
 def create_purchase_orders(material_request):
     material_request_doc = frappe.get_doc('Material Request', material_request)
     items_by_supplier = {}
-    print(material_request_doc,items_by_supplier)
 
     # Group items by supplier
     for item in material_request_doc.items:
         default_suppliers = frappe.get_all('Default Supplier', filters={'parent': item.item_code}, fields=['default_suppliers'])
-        for entry in default_suppliers:
-            supplier = entry.default_suppliers
-            if supplier:
-                if supplier not in items_by_supplier:
-                    items_by_supplier[supplier] = []
-                items_by_supplier[supplier].append(item)
+        
+        if not default_suppliers:
+            frappe.throw(f"Please mention default supplier for item {item.item_code}")
+        
+        supplier = default_suppliers[0].default_suppliers  # Only take the first default supplier
+        if supplier:
+            if supplier not in items_by_supplier:
+                items_by_supplier[supplier] = []
+            items_by_supplier[supplier].append(item)
 
     # Create Purchase Orders for each supplier
     purchase_orders = []
@@ -32,18 +34,18 @@ def create_purchase_orders(material_request):
         ordered_qty_by_item = {}
         
         if existing_po_names:
-            # Fetch all items in existing POs
-            existing_po_names = [po.name for po in existing_po_names]
+            # Fetch all items in existing POs for the specific Material Request
             existing_po_items = frappe.get_all('Purchase Order Item', filters={
-                'parent': ['in', existing_po_names],
+                'parent': ['in', [po.name for po in existing_po_names]],
                 'material_request': material_request
-            }, fields=['item_code', 'qty'])
+            }, fields=['item_code', 'qty', 'material_request_item'])
 
-            # Calculate ordered quantities by item code
+            # Calculate ordered quantities by item code for the current Material Request
             for item in existing_po_items:
-                if item['item_code'] not in ordered_qty_by_item:
-                    ordered_qty_by_item[item['item_code']] = 0
-                ordered_qty_by_item[item['item_code']] += item['qty']
+                if item['material_request_item'] in [i.name for i in items]:  # Ensure the item is part of the current Material Request
+                    if item['item_code'] not in ordered_qty_by_item:
+                        ordered_qty_by_item[item['item_code']] = 0
+                    ordered_qty_by_item[item['item_code']] += item['qty']
 
         items_to_order = []
         for item in items:
@@ -53,13 +55,17 @@ def create_purchase_orders(material_request):
                 items_to_order.append(item)
 
         if items_to_order:
-            print(items_to_order)
-            if frappe.db.exists('Purchase Order',{'supplier':supplier,'docstatus':0}):
-                print(frappe.db.exists('Purchase Order',{'supplier':supplier,'docstatus':0}))
-                po = frappe.get_doc('Purchase Order',{'supplier':supplier,'docstatus':0})
-                print(po)
+            # Check if there is an existing draft PO for this supplier
+            existing_draft_po = frappe.db.exists('Purchase Order', {
+                'supplier': supplier,
+                'docstatus': 0,
+                'material_request': material_request
+            })
+            
+            if existing_draft_po:
+                po = frappe.get_doc('Purchase Order', existing_draft_po)
+                
                 for item in items_to_order:
-                    print(item,items_to_order)
                     po.append('items', {
                         'item_code': item.item_code,
                         'qty': item.due_qty,
@@ -71,10 +77,7 @@ def create_purchase_orders(material_request):
                     })
                 po.save()
                 updated_orders.append({'name': po.name, 'supplier': po.supplier})
-                print(updated_orders)
             else:
-                print('hello')
-
                 po = frappe.new_doc('Purchase Order')
                 po.supplier = supplier
                 for item in items_to_order:
@@ -96,16 +99,11 @@ def create_purchase_orders(material_request):
     return {
         'created': purchase_orders,
         'existing': existing_orders,
-        'updated':updated_orders
+        'updated': updated_orders
     }
-
-
-
-
 
 @frappe.whitelist()
 def get_suppliers_for_item(item_code):
     default_suppliers = frappe.get_all('Default Supplier', filters={'parent': item_code}, fields=['default_suppliers'])
     supplier_list = [entry.default_suppliers for entry in default_suppliers]
     return supplier_list
-
