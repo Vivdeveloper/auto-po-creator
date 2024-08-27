@@ -84,7 +84,7 @@ def create_purchase_orders(material_request):
             else:
                 po = frappe.new_doc('Purchase Order')
                 po.supplier = supplier
-                po.taxes_and_charges = "Input GST In-state - K"
+                po.taxes_and_charges = "Output GST In-state - K&KE"
                 for item in items_to_order:
                     po.append('items', {
                         'item_code': item.item_code,
