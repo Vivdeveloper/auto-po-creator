@@ -24,7 +24,7 @@ frappe.ui.form.on('Material Request', {
                         if (response.message.existing.length > 0) {
                             message += '<br><b>' + __('Existing Purchase Orders:') + '</b><br>';
                             response.message.existing.forEach(po => {
-                                message += `A purchase order for supplier ${po.supplier} has already been created: <a href='/app/purchase-order/${po.po_name}'>${po.po_name}</a><br>`;
+                                message += `A purchase order for supplier ${po.supplier} has already been created<br>`;
                             });
                         }
                         if (response.message.created.length === 0 && response.message.existing.length > 0) {

@@ -75,11 +75,16 @@ def create_purchase_orders(material_request):
                         'material_request': material_request,
                         'material_request_item': item.name
                     })
+
+                # Add taxes and charges
+                add_taxes_and_charges(po)
+
                 po.save()
                 updated_orders.append({'name': po.name, 'supplier': po.supplier})
             else:
                 po = frappe.new_doc('Purchase Order')
                 po.supplier = supplier
+                po.taxes_and_charges = "Input GST In-state - K"
                 for item in items_to_order:
                     po.append('items', {
                         'item_code': item.item_code,
@@ -90,6 +95,10 @@ def create_purchase_orders(material_request):
                         'material_request': material_request,
                         'material_request_item': item.name
                     })
+
+                # Add taxes and charges
+                add_taxes_and_charges(po)
+
                 po.insert()
                 purchase_orders.append({'name': po.name, 'supplier': po.supplier})
         else:
@@ -101,6 +110,34 @@ def create_purchase_orders(material_request):
         'existing': existing_orders,
         'updated': updated_orders
     }
+
+def add_taxes_and_charges(po):
+    """Add taxes and charges based on the 'taxes_and_charges' field."""
+    if po.taxes_and_charges:
+        taxes_template = frappe.get_doc('Purchase Taxes and Charges Template', po.taxes_and_charges)
+        for tax in taxes_template.taxes:
+            po.append('taxes', {
+                'category': tax.category,
+                'add_deduct_tax': tax.add_deduct_tax,
+                'charge_type': tax.charge_type,
+                'included_in_print_rate': tax.included_in_print_rate,
+                'included_in_paid_amount': tax.included_in_paid_amount,
+                'rate': tax.rate,
+                'account_head': tax.account_head,
+                'description': tax.description,
+                'is_tax_withholding_account': tax.is_tax_withholding_account,
+                'cost_center': tax.cost_center,
+                'tax_amount': tax.tax_amount,
+                'tax_amount_after_discount_amount': tax.tax_amount_after_discount_amount,
+                'total': tax.total,
+                'base_tax_amount': tax.base_tax_amount,
+                'base_tax_amount_after_discount_amount': tax.base_tax_amount_after_discount_amount,
+                'base_total': tax.base_total
+            })
+
+
+
+
 
 @frappe.whitelist()
 def get_suppliers_for_item(item_code):
