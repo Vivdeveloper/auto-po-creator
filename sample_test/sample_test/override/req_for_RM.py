@@ -1,10 +1,70 @@
-__version__ = "0.0.1"
-
 import frappe
 from frappe import _ 
 import json
 from erpnext.manufacturing.doctype.production_plan import production_plan
+from frappe.utils import nowdate, add_days, cint, strip_html
 
+
+
+
+@frappe.whitelist()
+def make_raw_material_req(items, company, sales_order, project=None):
+	if not frappe.has_permission("Sales Order", "write"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	if isinstance(items, str):
+		items = frappe._dict(json.loads(items))
+
+	for item in items.get("items"):
+		item["include_exploded_items"] = items.get("include_exploded_items")
+		item["ignore_existing_ordered_qty"] = items.get("ignore_existing_ordered_qty")
+		item["include_raw_materials_from_sales_order"] = items.get("include_raw_materials_from_sales_order")
+
+	items.update({"company": company, "sales_order": sales_order})
+
+	raw_materials = custom_get_items_for_material_requests(items)
+	
+	if not raw_materials:
+		frappe.msgprint(_("Material Request not created, as quantity for Raw Materials already available."))
+		return
+
+	material_request = frappe.new_doc("Material Request")
+	material_request.update(
+		dict(
+			doctype="Material Request",
+			transaction_date=nowdate(),
+			company=company,
+			material_request_type="Purchase",
+		)
+	)
+	for item in raw_materials:
+		item_doc = frappe.get_cached_doc("Item", item.get("item_code"))
+
+		schedule_date = add_days(nowdate(), cint(item_doc.lead_time_days))
+		row = material_request.append(
+			"items",
+			{
+				"item_code": item.get("item_code"),
+				"qty": item.get("quantity"),
+				"schedule_date": schedule_date,
+				"warehouse": item.get("warehouse"),
+				"sales_order": sales_order,
+				"project": project,
+			},
+		)
+
+		# if not (strip_html(item.get("description")) and strip_html(item_doc.description)):
+		if not (strip_html(item.get("description") or "") and strip_html(item_doc.description or "")):
+
+			row.description = item_doc.item_name or item.get("item_code")
+
+	material_request.insert()
+	material_request.flags.ignore_permissions = 1
+	material_request.run_method("set_missing_values")
+	material_request.submit()
+	return material_request
+
+# @frappe.whitelist()
 def custom_get_items_for_material_requests(doc, warehouses=None, get_parent_warehouse_data=None):
     # Ensure doc is parsed as a dict; if it's a string, load it as JSON
     if isinstance(doc, str):
@@ -136,25 +196,5 @@ def get_uom_conversion_factor(item_code, uom):
 		"UOM Conversion Detail", {"parent": item_code, "uom": uom}, "conversion_factor"
 	)
 
-# Override the default method
-# setattr(production_plan, "get_items_for_material_requests", custom_get_items_for_material_requests)
 
 
-# Helper function to get warehouse list
-# def get_warehouse_list(warehouses):
-#     warehouse_list = []
-
-#     if isinstance(warehouses, str):
-#         warehouses = json.loads(warehouses)
-
-#     for row in warehouses:
-#         child_warehouses = frappe.db.get_descendants("Warehouse", row.get("warehouse"))
-#         if child_warehouses:
-#             warehouse_list.extend(child_warehouses)
-#         else:
-#             warehouse_list.append(row.get("warehouse"))
-
-#     return warehouse_list
-
-# # Use setattr to override the function
-# setattr(production_plan, "get_items_for_material_requests", custom_get_items_for_material_requests)

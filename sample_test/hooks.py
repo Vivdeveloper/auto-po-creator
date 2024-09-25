@@ -32,7 +32,7 @@ app_license = "mit"
 doctype_js = {
 				# "Job Card" : ["public/js/job_card.js"],
 				# "Stock Entry":["public/js/stock_entry.js"],
-				# "Sales Order":["public/js/sales_order.js"],
+				"Sales Order":["public/js/sales_order.js"],
                 "Material Request":["public/js/material_request.js"]
 			}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -165,9 +165,7 @@ doctype_js = {
 # Overriding Methods
 # ------------------------------
 #
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "sample_test.event.get_events"
-# }
+
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
@@ -232,4 +230,7 @@ doctype_js = {
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
+
+
+
 
