@@ -60,10 +60,11 @@ def make_raw_material_req(items, company, sales_order, project=None):
 def custom_get_items_for_material_requests(doc, warehouses=None, get_parent_warehouse_data=None):
     if isinstance(doc, str):
         doc = json.loads(doc)
-    
+
     doc = frappe._dict(doc)
     company = doc.get("company")
     mr_items = []
+    items_skipped = []  # This list will hold the names of items for which material request was not created
 
     po_items = doc.get("po_items") if doc.get("po_items") else doc.get("items")
 
@@ -73,52 +74,45 @@ def custom_get_items_for_material_requests(doc, warehouses=None, get_parent_ware
     for data in po_items:
         planned_qty = data.get("required_qty") or data.get("planned_qty")
 
-        # Fetch child warehouses based on the set warehouse or parent warehouse
-        warehouse_details = frappe.get_doc("Warehouse", data.get("warehouse"))
-
-        if warehouse_details.is_group:
-            # Fetch all child warehouses for the group warehouse
-            child_warehouses = fetch_child_warehouses(warehouse_details.name)
-        elif warehouse_details.parent_warehouse:
-            # If the warehouse is not a group, check its parent warehouse
-            parent_warehouse_details = frappe.get_doc("Warehouse", warehouse_details.parent_warehouse)
-            child_warehouses = fetch_child_warehouses(parent_warehouse_details.name)
-        else:
-            # Use the warehouse itself if no group or parent is found
-            child_warehouses = [data.get("warehouse")]
-
-        # Ensure the warehouse list is formatted properly for the SQL query
-        warehouse_list = ','.join([f"'{w}'" for w in child_warehouses])
+        # Fetch all child warehouses where parent_warehouse = 'I - K&KE'
+        child_warehouses = frappe.get_all("Warehouse", filters={"parent_warehouse": "I - K&KE"}, pluck="name")
         
+        # If no child warehouses are found, use the parent warehouse itself
+        if not child_warehouses:
+            child_warehouses = ["I - K&KE"]
+        
+        # Prepare the warehouse list for SQL query
+        warehouse_list = ','.join([f"'{w}'" for w in child_warehouses])
 
-        # Fetch total actual quantity across child warehouses
-        total_actual_qty = frappe.db.sql(f"""
+        # Fetch total actual quantity for BOM items across specified child warehouses
+        bom_actual_qty = frappe.db.sql(f"""
             SELECT SUM(actual_qty)
             FROM `tabBin`
-            WHERE item_code=%s AND warehouse IN ({warehouse_list})
+            WHERE item_code=%s
         """, data.get("item_code"))[0][0] or 0
         
-
-        # Compare the required quantity against total stock across child warehouses
-        if planned_qty > total_actual_qty:
-            required_qty_for_request = planned_qty - total_actual_qty
+        # Compare the required quantity against total stock across filtered warehouses
+        if planned_qty > bom_actual_qty:
+            required_qty_for_request = planned_qty - bom_actual_qty
         else:
+            # No material request needed, log the item and continue the loop
             required_qty_for_request = 0
+            items_skipped.append(data.get("item_code"))  # Add item name to the skipped list
+            continue  # Break from this loop and move to the next item
 
         # If BOM exists, fetch BOM items and apply the same logic
         if data.get("bom"):
             bom_items = frappe.get_all("BOM Item", filters={"parent": data.get("bom")}, fields=["item_code", "qty", "stock_uom"])
 
             for bom_item in bom_items:
-                total_required_qty = bom_item.qty * planned_qty
+                total_required_qty = bom_item.qty * required_qty_for_request
 
-                # Fetch total actual quantity for BOM items across child warehouses
+                # Fetch total actual quantity for BOM items across specified child warehouses
                 bom_actual_qty = frappe.db.sql(f"""
                     SELECT SUM(actual_qty)
                     FROM `tabBin`
                     WHERE item_code=%s AND warehouse IN ({warehouse_list})
                 """, bom_item.item_code)[0][0] or 0
-                
 
                 # Add the required quantity to Material Request if needed
                 if total_required_qty > bom_actual_qty:
@@ -142,7 +136,15 @@ def custom_get_items_for_material_requests(doc, warehouses=None, get_parent_ware
     if not mr_items:
         frappe.msgprint(_("No Material Request created as sufficient stock is available."))
 
+    # If some items were skipped due to sufficient stock, notify the user
+    if items_skipped:
+        skipped_items = ', '.join(items_skipped)
+        frappe.msgprint(_("Material Request not created for the following items due to sufficient stock: {0}").format(skipped_items))
+
     return mr_items
+
+
+
 
 # Function to fetch child warehouses
 def fetch_child_warehouses(parent_warehouse):
