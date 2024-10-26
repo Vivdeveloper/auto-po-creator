@@ -4,6 +4,7 @@ import frappe
 from frappe import _ 
 import json
 from erpnext.manufacturing.doctype.production_plan import production_plan
+from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
 
 def custom_get_items_for_material_requests(doc, warehouses=None, get_parent_warehouse_data=None):
     # Ensure doc is parsed as a dict; if it's a string, load it as JSON
@@ -158,3 +159,8 @@ def get_uom_conversion_factor(item_code, uom):
 
 # # Use setattr to override the function
 # setattr(production_plan, "get_items_for_material_requests", custom_get_items_for_material_requests)
+
+
+
+
+

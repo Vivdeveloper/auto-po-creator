@@ -32,7 +32,7 @@ app_license = "mit"
 doctype_js = {
 				# "Job Card" : ["public/js/job_card.js"],
 				# "Stock Entry":["public/js/stock_entry.js"],
-				"Sales Order":["public/js/sales_order.js"],
+				"Sales Order":["public/js/sales_order.js","public/js/reserve_so.js"],
                 "Material Request":["public/js/material_request.js"]
 			}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -230,6 +230,17 @@ doctype_js = {
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
+
+# apps/sample_test/sample_test/hooks.py
+
+# apps/sample_test/sample_test/hooks.py
+
+override_whitelisted_methods = {
+    "erpnext.selling.doctype.sales_order.sales_order.make_delivery_note": 
+    "sample_test.sample_test.override.make_delivery_note.custom_make_delivery_note"
+}
+
+
 
 
 
