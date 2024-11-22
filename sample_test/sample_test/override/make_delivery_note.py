@@ -41,90 +41,69 @@ from erpnext.stock.stock_balance import get_reserved_qty, update_bin_qty
 
 @frappe.whitelist()
 def custom_make_delivery_note(source_name, target_doc=None, kwargs=None):
-	from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
+    from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 
-	if not kwargs:
-		kwargs = {
-			"for_reserved_stock": frappe.flags.args and frappe.flags.args.for_reserved_stock,
-			"skip_item_mapping": frappe.flags.args and frappe.flags.args.skip_item_mapping,
-		}
+    if not kwargs:
+        kwargs = {
+            "for_reserved_stock": frappe.flags.args and frappe.flags.args.for_reserved_stock,
+            "skip_item_mapping": frappe.flags.args and frappe.flags.args.skip_item_mapping,
+        }
 
-	kwargs = frappe._dict(kwargs)
+    kwargs = frappe._dict(kwargs)
 
-	# Remove usage of SRE details to exclude reserved quantities
-	sre_details = {}  
+    # Step 1: Fetch all previous Delivery Note items linked to this Sales Order
+    existing_delivery_note_items = frappe.get_all(
+        "Delivery Note Item",
+        filters={"against_sales_order": source_name},
+        fields=["item_code", "qty"]
+    )
 
-	mapper = {
-		"Sales Order": {"doctype": "Delivery Note", "validation": {"docstatus": ["=", 1]}},
-		"Sales Taxes and Charges": {"doctype": "Sales Taxes and Charges", "add_if_empty": True},
-		"Sales Team": {"doctype": "Sales Team", "add_if_empty": True},
-	}
+    # Step 2: Initialize delivered_qty_map
+    delivered_qty_map = frappe._dict()
+    for item in existing_delivery_note_items:
+        # Log each step of the update
+        frappe.logger().info(f"Processing Item: {item.item_code}, Qty: {item.qty}")
+        delivered_qty_map[item.item_code] = delivered_qty_map.get(item.item_code, 0) + item.qty
+        frappe.logger().info(f"Updated delivered_qty_map: {delivered_qty_map}")
 
-	def set_missing_values(source, target):
-		target.run_method("set_missing_values")
-		target.run_method("set_po_nos")
-		target.run_method("calculate_taxes_and_totals")
-		target.run_method("set_use_serial_batch_fields")
+    # Log the final delivered_qty_map after the loop
+    frappe.logger().info(f"Final delivered_qty_map: {delivered_qty_map}")
 
-		if source.company_address:
-			target.update({"company_address": source.company_address})
-		else:
-			target.update(get_company_address(target.company))
+    # frappe.throw(f"Final delivered_qty_map: {delivered_qty_map}")
+	
 
-		if target.company_address:
-			target.update(get_fetch_values("Delivery Note", "company_address", target.company_address))
+    # Step 3: Fetch the Sales Order and calculate remaining quantities
+    so = frappe.get_doc("Sales Order", source_name)
+    target_doc = frappe.new_doc("Delivery Note")  # Start with a new Delivery Note
+    target_doc.customer = so.customer  # Map Sales Order fields
+    target_doc.posting_date = frappe.utils.today()
 
-		if frappe.flags.bulk_transaction:
-			target.set_new_name()
+    for so_item in so.items:
+        total_delivered_qty = delivered_qty_map.get(so_item.item_code, 0)
+        remaining_qty = flt(so_item.qty) - flt(total_delivered_qty)
 
-		make_packing_list(target)
+        # Only add items with remaining quantities
+        if remaining_qty > 0:
+            target_doc.append("items", {
+                "item_code": so_item.item_code,
+                "qty": remaining_qty,
+                "rate": so_item.rate,
+                "warehouse": so_item.warehouse,
+                "description": so_item.description or "Sales Order Item",
+                "against_sales_order": source_name,
+                "so_detail": so_item.name,  # Reference to the Sales Order Item
+            })
 
-	def condition(doc):
-		# Ensure SRE is not checked, keeping only regular item quantities
-		if frappe.flags.args and frappe.flags.args.delivery_dates:
-			if cstr(doc.delivery_date) not in frappe.flags.args.delivery_dates:
-				return False
-		if frappe.flags.args and frappe.flags.args.until_delivery_date:
-			if cstr(doc.delivery_date) > frappe.flags.args.until_delivery_date:
-				return False
+    # Step 4: Calculate totals and set missing values
+    target_doc.set_missing_values()
+    target_doc.run_method("calculate_taxes_and_totals")
 
-		return abs(doc.delivered_qty) < abs(doc.qty) and doc.delivered_by_supplier != 1
+    return target_doc
 
-	def update_item(source, target, source_parent):
-		target.base_amount = (flt(source.qty) - flt(source.delivered_qty)) * flt(source.base_rate)
-		target.amount = (flt(source.qty) - flt(source.delivered_qty)) * flt(source.rate)
-		target.qty = flt(source.qty) - flt(source.delivered_qty)
 
-		item = get_item_defaults(target.item_code, source_parent.company)
-		item_group = get_item_group_defaults(target.item_code, source_parent.company)
 
-		if item:
-			target.cost_center = (
-				frappe.db.get_value("Project", source_parent.project, "cost_center")
-				or item.get("buying_cost_center")
-				or item_group.get("buying_cost_center")
-			)
 
-	if not kwargs.skip_item_mapping:
-		mapper["Sales Order Item"] = {
-			"doctype": "Delivery Note Item",
-			"field_map": {
-				"rate": "rate",
-				"name": "so_detail",
-				"parent": "against_sales_order",
-			},
-			"condition": condition,
-			"postprocess": update_item,
-		}
 
-	so = frappe.get_doc("Sales Order", source_name)
-	target_doc = get_mapped_doc("Sales Order", so.name, mapper, target_doc)
 
-	# Skip additional SRE handling here
-
-	# Set missing values for the Delivery Note after item mapping
-	set_missing_values(so, target_doc)
-
-	return target_doc
 
 
