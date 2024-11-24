@@ -237,7 +237,7 @@ doctype_js = {
 
 override_whitelisted_methods = {
     "erpnext.selling.doctype.sales_order.sales_order.make_delivery_note": 
-    "sample_test.sample_test.override.make_delivery_note.custom_make_delivery_note"
+    "sample_test.sample_test.override.make_delivery_note.make_delivery_note"
 }
 
 

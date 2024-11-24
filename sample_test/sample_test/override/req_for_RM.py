@@ -62,17 +62,21 @@ def custom_get_items_for_material_requests(doc, warehouses=None, get_parent_ware
         doc = json.loads(doc)
 
     doc = frappe._dict(doc)
+    
+   
     company = doc.get("company")
     mr_items = []
     items_skipped = []  # This list will hold the names of items for which material request was not created
 
     po_items = doc.get("po_items") if doc.get("po_items") else doc.get("items")
+    
 
     if not po_items or not [row.get("item_code") for row in po_items if row.get("item_code")]:
         frappe.throw(_("Items to Manufacture are required to pull the Raw Materials associated with it."), title=_("Items Required"))
 
     for data in po_items:
         planned_qty = data.get("required_qty") or data.get("planned_qty")
+        frappe.throw(f'{planned_qty}')
 
         # Fetch all child warehouses where parent_warehouse = 'I - K&KE'
         child_warehouses = frappe.get_all("Warehouse", filters={"parent_warehouse": "I - K&KE"}, pluck="name")
