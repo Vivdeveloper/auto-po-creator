@@ -112,7 +112,13 @@ def create_purchase_orders(material_request):
     }
 
 def add_taxes_and_charges(po):
-    """Add taxes and charges based on the 'taxes_and_charges' field."""
+    """Add taxes and charges only if the supplier has GSTIN."""
+    supplier_doc = frappe.get_doc("Supplier", po.supplier)
+    if not supplier_doc.gstin:  # If GSTIN is not present, clear taxes_and_charges field
+        po.taxes_and_charges = None
+        po.taxes = []  # Clear any pre-existing tax rows
+        return
+
     if po.taxes_and_charges:
         taxes_template = frappe.get_doc('Purchase Taxes and Charges Template', po.taxes_and_charges)
         for tax in taxes_template.taxes:
@@ -134,6 +140,7 @@ def add_taxes_and_charges(po):
                 'base_tax_amount_after_discount_amount': tax.base_tax_amount_after_discount_amount,
                 'base_total': tax.base_total
             })
+
 
 
 
